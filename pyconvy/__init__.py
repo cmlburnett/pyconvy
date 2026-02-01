@@ -12,7 +12,33 @@ import sys
 import time
 import traceback
 
-class ItemProcessed(Exception): pass
+# Try to get pushover library otherwise don't use it
+try:
+	import pushover
+except:
+	pushover = None
+
+def StartTime():
+	start = datetime.datetime.now()
+	start_str = start.strftime("%Y-%m-%d %H:%M:%S.%f")
+
+	return start,start_str
+
+def EndTime(start):
+	end = datetime.datetime.now()
+	end_str = end.strftime("%Y-%m-%d %H:%M:%S.%f")
+	diff = end - start
+	diff_str = str(diff)
+
+	return end,end_str, diff,diff_str
+
+class ItemProcessed(Exception):
+	"""
+	Exception raised when an item is finished.
+	This ends the loop of finding items to process, and restarts the scan after a short delay.
+	THis allows adding new items, changing conversion settings, etc. without having to restart the pyconvy porcess.
+	"""
+	pass
 
 class Convy:
 	"""
@@ -334,8 +360,7 @@ class ConvyConfig:
 		if os.path.exists(done):
 			return
 
-		start = datetime.datetime.now()
-		start_str = start.strftime("%Y-%m-%d %H:%M:%S.%f")
+		start,start_str = StartTime()
 		if 'video.passes' in settings:
 			for i in range(0, int(settings['video.passes'])):
 				args = ['ffmpeg', '-y', '-loglevel', 'warning']
@@ -359,14 +384,10 @@ class ConvyConfig:
 
 				print(args)
 				try:
+					# Execute ffmpeg
 					subprocess.run(args)
-					time.sleep(1.5)
-					pass
 				except:
-					end = datetime.datetime.now()
-					end_str = end.strftime("%Y-%m-%d %H:%M:%S.%f")
-					diff = end - start
-					diff_str = str(diff)
+					end,end_str, diff,diff_str = EndTime(start)
 
 					print(args)
 					print("Failed to execute ffmpeg")
@@ -383,12 +404,19 @@ class ConvyConfig:
 						traceback.print_exc(file=f)
 						f.write('\n\n')
 
-					raise ItemProcessed("Finished '%s' but with exception" % path)
+					self.SendNotification("Failed pass %d on item %s and took %s, see dot file for exception" % (i+1, name, diff_str), "Failed %s"%name)
 
-			end = datetime.datetime.now()
-			end_str = end.strftime("%Y-%m-%d %H:%M:%S.%f")
-			diff = end - start
-			diff_str = str(diff)
+					raise ItemProcessed("Failed pass %d on '%s' but with exception" % (i+1, name))
+
+				# End and diff of process time
+				end,end_str, diff,diff_str = EndTime(start)
+
+				# This should report all but the last pass (last pass would get double messaged if it wasn't checked)
+				if i+1 < int(settings['video.passes']):
+					self.SendNotification("Pass %d done on item %s and took %s" % (i+1, name, diff_str), "Partial %s"%name)
+
+			# Reaches this point
+			end,end_str, diff,diff_str = EndTime(start)
 
 			# Done, set the dot file so it's not redone
 			with open(done, 'w') as f:
@@ -399,11 +427,60 @@ class ConvyConfig:
 				f.write(' '.join(args))
 				f.write('\n\n')
 
+			# Report item is done
+			self.SendNotification("Completed item %s and took %s" % (name, diff_str), "Done %s"%name)
+
 			# Done, reprocess the files
 			raise ItemProcessed("Finished '%s'" % path)
 
 		else:
 			raise NotImplementedError("Have not implemented single pass yet")
+
+	def SendNotification(self, msg, title):
+		"""
+		Send a notification of an event with Pushover.
+		Requires a [pushover] section in a config and user and api keys that match that in ~/.pushoverrc
+		"""
+
+		# If not the module then abort
+		if not pushover:
+			return
+
+		try:
+			# Get pushover credentials
+			po_user,po_api = self.GetPushoverCredentials()
+
+			# If both are provided, then can send
+			if po_user and po_api:
+				pushover.Client(user=po_user, api=po_api).send_message(msg % args, title=title)
+
+		except:
+			# Don't let this abort the execution
+			print("Exception caught in sending notification")
+			traceback.print_exc()
+
+	def GetPushoverCredentials(self):
+		"""
+		Step through config files and finding the pushover credentials.
+		"""
+
+		user = None
+		api = None
+		if 'pushover' in self.Config.sections():
+			if 'user' in self.Config['pushover']:
+				user = self.Config['pushover']['user']
+			if 'api' in self.Config['pushover']:
+				api = self.Config['pushover']['api']
+
+		if self._parent:
+			# Check if parent config has credentials
+			u,a = self._parent.GetPushoverCredentials()
+			# If user and u are None, then it will be None
+			# If user or u are not None, then it will be the not None value
+			# If user and u are not None, then user will be the value (it takes precedence being from the child config)
+			return (user or u, api or a)
+		else:
+			return (user,api)
 
 class VideoHelp:
 	"""
