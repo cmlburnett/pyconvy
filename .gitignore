@@ -4,3 +4,4 @@ build
 .AppleDouble
 __pycache__
 *egg-info
+*temp
