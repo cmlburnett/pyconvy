@@ -358,10 +358,12 @@ class ConvyConfig:
 		# Because ItemProcessed is thrown when a file & resolution is done, if multiple resolutions for a given file are to be done
 		# The done check will quietly allow other resolutions to be processed
 		if os.path.exists(done):
+			print("Already done %s of %s" % (settings['resolution'], path))
 			return
 
 		start,start_str = StartTime()
 		if 'video.passes' in settings:
+			print("Starting %s of %s" % (settings['resolution'], path))
 			for i in range(0, int(settings['video.passes'])):
 				args = ['ffmpeg', '-y', '-loglevel', 'warning']
 				args += ['-i', path]
