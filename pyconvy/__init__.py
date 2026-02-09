@@ -246,11 +246,16 @@ class ConvyConfig:
 		name = os.path.split(path)[1]
 		print("Processing Movie '%s' (%s)" % (name, path))
 
+		# Exclude dot files and exclude processed files
 		items = os.listdir(path)
+		items = [_ for _ in items if not _.startswith('.')]
+		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' sd')]
+		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' hd')]
+		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' 1k')]
+		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' 4k')]
+		items.sort()
+		print("%d items found" % len(items))
 		for item in items:
-			# Skip dot files
-			if item.startswith('.'): continue
-
 			subp = os.path.join(path, item)
 
 			if os.path.isfile(subp):
@@ -279,35 +284,48 @@ class ConvyConfig:
 				}
 
 				if multi:
+					sets = []
+
 					if res == '4k':
 						for res in ('4k', '1k', 'hd', 'sd'):
-							settings['resolution'] = res
-							self.GetSettings(settings)
+							s = dict(settings)
 
-							self.ProcessVideo(subp, settings)
+							s['resolution'] = res
+							self.GetSettings(s)
+							sets.append(s)
 					elif res == '1k':
 						for res in ('1k', 'hd', 'sd'):
-							settings['resolution'] = res
-							self.GetSettings(settings)
+							s = dict(settings)
 
-							self.ProcessVideo(subp, settings)
+							s['resolution'] = res
+							self.GetSettings(s)
+							sets.append(s)
 					elif res == 'hd':
 						for res in ('hd', 'sd'):
-							settings['resolution'] = res
-							self.GetSettings(settings)
+							s = dict(settings)
 
-							self.ProcessVideo(subp, settings)
+							s['resolution'] = res
+							self.GetSettings(settings)
+							sets.append(s)
+
 					elif res == 'sd':
 						self.GetSettings(settings)
-
-						self.ProcessVideo(subp, settings)
+						sets.append(settings)
 					else:
 						raise NotImplementedError("Shouldn't reach this")
+
+					self.ProcessVideo(name, subp, *sets)
 				else:
 					# Single resolution
 					self.GetSettings(settings)
 
-					self.ProcessVideo(subp, settings)
+					self.ProcessVideo(name, subp, settings)
+
+				# If nothing was processed, control will return
+				# If something was processed, it throws an ItemProcessed exception which control is not returned to this point
+
+				# Just slow things a bit to avoid hammering notifications if something goes awry
+				time.sleep(5)
 
 	def GetSettings(self, settings):
 		"""
@@ -341,32 +359,41 @@ class ConvyConfig:
 
 		return settings
 
-	def ProcessVideo(self, path, settings):
+	def ProcessVideo(self, name, path, *lst_settings):
 		"""
 		Take a video file @path and apply the settings @settings to it to do the conversion.
 		"""
 
-		# Form output file location @dest
-		# Form dot file to signify file and resolution @done was previously converted
-		if settings['output.format'] == 'matroska':
-			dest = os.path.splitext(path)[0] + (' %s.mkv' % settings['resolution'])
-			done = os.path.split(dest)[0] + '/.' + os.path.split(dest)[1]
-		else:
-			raise ValueError("For video '%s', unknown output formst '%s'" % (path, settings['output.format']))
+		if 'video.passes' not in lst_settings[0]:
+			raise NotImplementedError("Not handling single pass conversion yet")
 
-		# Already done, skip it
-		# Because ItemProcessed is thrown when a file & resolution is done, if multiple resolutions for a given file are to be done
-		# The done check will quietly allow other resolutions to be processed
-		if os.path.exists(done):
-			print("Already done %s of %s" % (settings['resolution'], path))
-			return
+		passes = int(lst_settings[0]['video.passes'])
 
-		start,start_str = StartTime()
-		if 'video.passes' in settings:
-			print("Starting %s of %s" % (settings['resolution'], path))
-			for i in range(0, int(settings['video.passes'])):
-				args = ['ffmpeg', '-y', '-loglevel', 'warning']
-				args += ['-i', path]
+		# Do a transcode once per pass
+		for i in range(0, passes):
+			args = ['ffmpeg', '-y', '-loglevel', 'warning', '-i', path]
+			dones = []
+
+			# Aggregate all output files into a single command
+			for settings in lst_settings:
+				# Form output file location @dest
+				# Form dot file to signify file and resolution @done was previously converted
+				if settings['output.format'] == 'matroska':
+					dest = os.path.splitext(path)[0] + (' %s.mkv' % settings['resolution'])
+					done = os.path.split(dest)[0] + '/.' + os.path.split(dest)[1]
+				else:
+					raise ValueError("For video '%s', unknown output formst '%s'" % (path, settings['output.format']))
+
+				# Already done, skip it
+				# Because ItemProcessed is thrown when a file & resolution is done, if multiple resolutions for a given file are to be done
+				# The done check will quietly allow other resolutions to be processed
+				if os.path.exists(done):
+					print("Already done %s of %s" % (settings['resolution'], path))
+					continue
+				else:
+					print("Adding %s of %s" % (settings['resolution'], path))
+					dones.append(done)
+
 				args += ['-c:v', settings['video.codec']]
 				args += ['-b:v', settings['video.bitrate']]
 				args += ['-preset', settings['video.preset']]
@@ -384,18 +411,26 @@ class ConvyConfig:
 				else:
 					args.append(dest)
 
+			# All are processed
+			if len(dones) == 0:
+				return
+
+			start,start_str = StartTime()
+			print("Starting %s of %s" % (settings['resolution'], path))
+
+			print(args)
+			try:
+				# Execute ffmpeg
+				subprocess.run(args)
+			except:
+				end,end_str, diff,diff_str = EndTime(start)
+
 				print(args)
-				try:
-					# Execute ffmpeg
-					subprocess.run(args)
-				except:
-					end,end_str, diff,diff_str = EndTime(start)
+				print("Failed to execute ffmpeg")
+				traceback.print_exc()
 
-					print(args)
-					print("Failed to execute ffmpeg")
-					traceback.print_exc()
-
-					# Failed to process, mark dot file so others get processed instead
+				# Failed to process, mark dot file so others get processed instead
+				for done in dones:
 					with open(done, 'w') as f:
 						f.write("Failed with exception\n\n")
 						f.write("Start: %s\n" % start_str)
@@ -406,37 +441,36 @@ class ConvyConfig:
 						traceback.print_exc(file=f)
 						f.write('\n\n')
 
-					self.SendNotification("Failed pass %d on item %s and took %s, see dot file for exception" % (i+1, name, diff_str), "Failed %s"%name)
+				self.SendNotification("Failed pass %d on item %s and took %s, see dot file for exception" % (i+1, name, diff_str), "Failed %s"%name)
 
-					raise ItemProcessed("Failed pass %d on '%s' but with exception" % (i+1, name))
-
-				# End and diff of process time
-				end,end_str, diff,diff_str = EndTime(start)
-
-				# This should report all but the last pass (last pass would get double messaged if it wasn't checked)
-				if i+1 < int(settings['video.passes']):
-					self.SendNotification("Pass %d done on item %s and took %s" % (i+1, name, diff_str), "Partial %s"%name)
+				raise ItemProcessed("Failed pass %d on '%s' but with exception" % (i+1, name))
 
 			# Reaches this point
 			end,end_str, diff,diff_str = EndTime(start)
 
-			# Done, set the dot file so it's not redone
-			with open(done, 'w') as f:
-				f.write("Completed\n\n")
-				f.write("Start: %s\n" % start_str)
-				f.write("End: %s\n" % end_str)
-				f.write("Delta: %s\n\n" % diff_str)
-				f.write(' '.join(args))
-				f.write('\n\n')
+			if i+1 < passes:
+				print("Pass %d of %s of %s at %s (took %s)" % (i+1, settings['resolution'], path, end_str, diff_str))
 
-			# Report item is done
-			self.SendNotification("Completed item %s and took %s" % (name, diff_str), "Done %s"%name)
+				# Report item is done
+				self.SendNotification("Pass %d of %d done on item %s and took %s" % (i+1, passes, name, diff_str), "Pass %d of %s"%(i+1,name))
+			else:
+				print("Done %s of %s at %s (took %s)" % (settings['resolution'], path, end_str, diff_str))
 
-			# Done, reprocess the files
-			raise ItemProcessed("Finished '%s'" % path)
+				# Done, set the dot file so it's not redone
+				for done in dones:
+					with open(done, 'w') as f:
+						f.write("Completed\n\n")
+						f.write("Start: %s\n" % start_str)
+						f.write("End: %s\n" % end_str)
+						f.write("Delta: %s\n\n" % diff_str)
+						f.write(' '.join(args))
+						f.write('\n\n')
 
-		else:
-			raise NotImplementedError("Have not implemented single pass yet")
+				# Report item is done
+				self.SendNotification("Completed item %s and took %s" % (name, diff_str), "Done %s"%name)
+
+				# Done, reprocess the files
+				raise ItemProcessed("Finished '%s'" % path)
 
 	def SendNotification(self, msg, title):
 		"""
@@ -454,7 +488,7 @@ class ConvyConfig:
 
 			# If both are provided, then can send
 			if po_user and po_api:
-				pushover.Client(user=po_user, api=po_api).send_message(msg % args, title=title)
+				pushover.Client(user=po_user, api=po_api).send_message(msg, title=title)
 
 		except:
 			# Don't let this abort the execution
