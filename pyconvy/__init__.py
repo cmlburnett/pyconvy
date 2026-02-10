@@ -367,6 +367,10 @@ class ConvyConfig:
 		if 'video.passes' not in lst_settings[0]:
 			raise NotImplementedError("Not handling single pass conversion yet")
 
+		# Get just the file name
+		fname = os.path.split(path)[1]
+
+		# Convert passes to an integer
 		passes = int(lst_settings[0]['video.passes'])
 
 		# Do a transcode once per pass
@@ -452,7 +456,7 @@ class ConvyConfig:
 				print("Pass %d of %s of %s at %s (took %s)" % (i+1, settings['resolution'], path, end_str, diff_str))
 
 				# Report item is done
-				self.SendNotification("Pass %d of %d done on item %s and took %s" % (i+1, passes, name, diff_str), "Pass %d of %s"%(i+1,name))
+				self.SendNotification("Pass %d of %d done on item %s and took %s" % (i+1, passes, name, diff_str), "Pass %d of %s/%s"%(i+1,name,fname))
 			else:
 				print("Done %s of %s at %s (took %s)" % (settings['resolution'], path, end_str, diff_str))
 
@@ -467,7 +471,7 @@ class ConvyConfig:
 						f.write('\n\n')
 
 				# Report item is done
-				self.SendNotification("Completed item %s and took %s" % (name, diff_str), "Done %s"%name)
+				self.SendNotification("Completed item %s and took %s" % (name, diff_str), "Done %s/%s"%(name,fname))
 
 				# Done, reprocess the files
 				raise ItemProcessed("Finished '%s'" % path)
