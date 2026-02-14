@@ -36,7 +36,7 @@ class ItemProcessed(Exception):
 	"""
 	Exception raised when an item is finished.
 	This ends the loop of finding items to process, and restarts the scan after a short delay.
-	THis allows adding new items, changing conversion settings, etc. without having to restart the pyconvy porcess.
+	This allows adding new items, changing conversion settings, etc. without having to restart the pyconvy porcess.
 	"""
 	pass
 
