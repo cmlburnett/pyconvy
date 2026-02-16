@@ -458,7 +458,7 @@ class ConvyConfig:
 				# Report item is done
 				self.SendNotification("Pass %d of %d done on item %s and took %s" % (i+1, passes, name, diff_str), "Pass %d of %s/%s"%(i+1,name,fname))
 			else:
-				print("Done %s of %s at %s (took %s)" % (settings['resolution'], path, end_str, diff_str))
+				print("Done %s/%s of %s at %s (took %s)" % (settings['resolution'], name,fname, end_str, diff_str))
 
 				# Done, set the dot file so it's not redone
 				for done in dones:
