@@ -99,7 +99,6 @@ class Convy:
 		return c
 
 	def processdirs(self, dirs):
-		print(['dirs', dirs])
 		for c in dirs:
 			try:
 				c.Process()
@@ -221,14 +220,19 @@ class ConvyConfig:
 				print(['subc', subc])
 				subc.Process()
 
-		elif self.IsMainModeMovie:
+		elif self.IsMainModeMovie or self.IsMainModeTV:
 			for item in self._items:
 				done = os.path.split(item[2])[0] + '/.' + os.path.split(item[2])[1]
 				if os.path.exists(done):
 					print("Already done: %s" % item[2])
 					continue
 
-				self.ProcessMovie(item[2])
+				if self.IsMainModeMovie:
+					self.ProcessMovie(item[2])
+				elif self.IsMainModeTV:
+					self.ProcessTV(item[2])
+				else:
+					raise NotImplementedError("Should not reach this")
 
 				end = datetime.datetime.now()
 				end_str = end.strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -240,20 +244,15 @@ class ConvyConfig:
 
 	def ProcessMovie(self, path):
 		"""
-		Process the file @path as a movie.
+		Process the directory @path as a movie.
+		Expects a file named after the directory to be the feature film and everything else is a special feature.
 		"""
 
 		name = os.path.split(path)[1]
 		print("Processing Movie '%s' (%s)" % (name, path))
 
-		# Exclude dot files and exclude processed files
 		items = os.listdir(path)
-		items = [_ for _ in items if not _.startswith('.')]
-		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' sd')]
-		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' hd')]
-		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' 1k')]
-		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' 4k')]
-		items.sort()
+		items = VideoHelp.FilterFilesForVideos(items)
 		print("%d items found" % len(items))
 		for item in items:
 			subp = os.path.join(path, item)
@@ -264,18 +263,13 @@ class ConvyConfig:
 				else:
 					multi = self.Config['special']['multipleresolution'].lower() == 'true'
 
-				w,h = VideoHelp.GetResolution(subp)
+				# Truncated, so skip it
+				if os.path.getsize(subp) == 0:
+					print("Skipping, item %s has zero file size" % subp)
+					continue
 
-				if (w,h) == (720,480):
-					res = 'sd'
-				elif (w,h) == (1080,720):
-					res = 'hd'
-				elif (w,h) == (1920,1080):
-					res = '1k'
-				elif (w,h) == (4096,2160) or (w,h) == (3840,2160):
-					res = '4k'
-				else:
-					raise ValueError("Unknown resolution of video '%s' of %d x %d" % (subp, w, h))
+				w,h = VideoHelp.GetResolution(subp)
+				res = VideoHelp.GuessResolution(w,h)
 
 				settings = {
 					'resolution': res,
@@ -326,6 +320,202 @@ class ConvyConfig:
 
 				# Just slow things a bit to avoid hammering notifications if something goes awry
 				time.sleep(5)
+
+	def ProcessTV(self, path):
+		"""
+		Process the directory @path as a TV series.
+		Expects a bunch of folders, one per seasons, with a bunch of files inside ofit that are the episodes.
+		Inside the season can be subdirectories of special features.
+		Naming format for episodes is "SHOW - S__E__ - EPISODE TITLE".
+		"""
+
+		name = os.path.split(path)[1]
+		print("Processing TV Series '%s' (%s)" % (name, path))
+
+		# Get a list of all seasons
+		seasons = os.listdir(path)
+
+		# Get dot files to skip seasons already processed
+		dots = [_ for _ in seasons if _[0] == '.']
+		seasons = [_ for _ in seasons if os.path.isdir(os.path.join(path,_))]
+		print(['seasons', seasons])
+
+		for season in seasons:
+			if '.'+season in dots:
+				print("Already done season '%s' of '%s'" % (season, name))
+			else:
+				# Process the season
+				self._ProcessTV_Season(path, name, season)
+
+				# Skip season next iteration as its done
+				print("Finished season '%s' of '%s'" % (season, name))
+				with open(os.path.join(path, '.'+season), 'w'):
+					print("\n")
+
+	def _ProcessTV_Season(self, path, name, season):
+		"""
+		Process a TV season.
+		"""
+
+		# Get full path of the season
+		fpath = os.path.join(path, season)
+
+		# Split directories from episodes
+		items = os.listdir(fpath)
+		specialdirs = [_ for _ in items if os.path.isdir(os.path.join(fpath,_))]
+		episodes = [_ for _ in items if os.path.isfile(os.path.join(fpath,_))]
+		del items
+
+		episodes = VideoHelp.FilterFilesForVideos(episodes)
+		print(['episodes', episodes])
+		print(['specials', specialdirs])
+
+		# Process episodes first
+		for episode in episodes:
+			self._ProcessTV_SeasonEpisode(path, name, season, episode)
+
+		# iterate through special directories
+		for specialdir in specialdirs:
+			spath = os.path.join(fpath, specialdir)
+			specials = os.listdir(spath)
+			specials = VideoHelp.FilterFilesForVideos(specials)
+
+			for special in specials:
+				self._ProcessTV_SeasonSpecial(path, name, season, specialdir, special)
+
+	def _ProcessTV_SeasonEpisode(self, path, name, season, episode):
+		# Form full paths
+		spath = os.path.join(path, season)
+		epath = os.path.join(path, season, episode)
+
+		print("Processing TV Episodes %s" % epath)
+
+		if os.path.getsize(epath) == 0:
+			print("Skipping, item %s has zero file size" % epath)
+			return
+
+		w,h = VideoHelp.GetResolution(epath)
+		res = VideoHelp.GuessResolution(w,h)
+
+		settings = {
+			'resolution': res,
+			'width': w,
+			'height': h,
+		}
+
+		multi = self.Config['episode']['multipleresolution'].lower() == 'true'
+		if multi:
+			sets = []
+
+			if res == '4k':
+				for res in ('4k', '1k', 'hd', 'sd'):
+					s = dict(settings)
+
+					s['resolution'] = res
+					self.GetSettings(s)
+					sets.append(s)
+			elif res == '1k':
+				for res in ('1k', 'hd', 'sd'):
+					s = dict(settings)
+
+					s['resolution'] = res
+					self.GetSettings(s)
+					sets.append(s)
+			elif res == 'hd':
+				for res in ('hd', 'sd'):
+					s = dict(settings)
+
+					s['resolution'] = res
+					self.GetSettings(settings)
+					sets.append(s)
+
+			elif res == 'sd':
+				self.GetSettings(settings)
+				sets.append(settings)
+			else:
+				raise NotImplementedError("Shouldn't reach this")
+
+			newname = '%s/%s/%s' % (name, season, episode)
+			self.ProcessVideo(name, epath, *sets)
+		else:
+			# Single resolution
+			self.GetSettings(settings)
+
+			newname = '%s/%s/%s' % (name, season, episode)
+			self.ProcessVideo(name, epath, settings)
+
+		# If nothing was processed, control will return
+		# If something was processed, it throws an ItemProcessed exception which control is not returned to this point
+
+		# Just slow things a bit to avoid hammering notifications if something goes awry
+		time.sleep(5)
+
+	def _ProcessTV_SeasonSpecial(self, path, name, season, specialdir, special_name):
+		spath = os.path.join(path, season)
+		ppath = os.path.join(path, season, specialdir)
+		fpath = os.path.join(path, season, specialdir, special_name)
+
+		print("Processing TV Special %s" % fpath)
+
+		if os.path.getsize(epath) == 0:
+			print("Skipping, item %s has zero file size" % epath)
+			return
+
+		w,h = VideoHelp.GetResolution(fpath)
+		res = VideoHelp.GuessResolution(w,h)
+
+		settings = {
+			'resolution': res,
+			'width': w,
+			'height': h,
+		}
+
+		multi = self.Config['special']['multipleresolution'].lower() == 'true'
+		if multi:
+			sets = []
+
+			if res == '4k':
+				for res in ('4k', '1k', 'hd', 'sd'):
+					s = dict(settings)
+
+					s['resolution'] = res
+					self.GetSettings(s)
+					sets.append(s)
+			elif res == '1k':
+				for res in ('1k', 'hd', 'sd'):
+					s = dict(settings)
+
+					s['resolution'] = res
+					self.GetSettings(s)
+					sets.append(s)
+			elif res == 'hd':
+				for res in ('hd', 'sd'):
+					s = dict(settings)
+
+					s['resolution'] = res
+					self.GetSettings(settings)
+					sets.append(s)
+
+			elif res == 'sd':
+				self.GetSettings(settings)
+				sets.append(settings)
+			else:
+				raise NotImplementedError("Shouldn't reach this")
+
+			newname = '%s/%s/%s/%s' % (name, season, specialdir, special_name)
+			self.ProcessVideo(newname, fpath, *sets)
+		else:
+			# Single resolution
+			self.GetSettings(settings)
+
+			newname = '%s/%s/%s/%s' % (name, season, specialdir, special_name)
+			self.ProcessVideo(newname, fpath, settings)
+
+		# If nothing was processed, control will return
+		# If something was processed, it throws an ItemProcessed exception which control is not returned to this point
+
+		# Just slow things a bit to avoid hammering notifications if something goes awry
+		time.sleep(5)
 
 	def GetSettings(self, settings):
 		"""
@@ -540,4 +730,36 @@ class VideoHelp:
 				return (w,h)
 
 		raise ValueError("Video file '%s' does not have a resolution" % path)
+
+	@staticmethod
+	def FilterFilesForVideos(items):
+		"""
+		Processed videos include sd/hd/1k/4k the name.
+		Exclude .cfg, .py, .txt and assume the rest is video
+		"""
+
+		items = [_ for _ in items if not _.startswith('.')]
+		items = [_ for _ in items if not _.endswith('.cfg')]
+		items = [_ for _ in items if not _.endswith('.py')]
+		items = [_ for _ in items if not _.endswith('.txt')]
+		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' sd')]
+		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' hd')]
+		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' 1k')]
+		items = [_ for _ in items if not os.path.splitext(_)[0].endswith(' 4k')]
+		items.sort()
+
+		return items
+
+	@staticmethod
+	def GuessResolution(w,h):
+		if (w,h) == (720,480):
+			return 'sd'
+		elif (w,h) == (1080,720):
+			return 'hd'
+		elif (w,h) == (1920,1080):
+			return '1k'
+		elif (w,h) == (4096,2160) or (w,h) == (3840,2160):
+			return '4k'
+		else:
+			raise ValueError("Unknown resolution of video '%s' of %d x %d" % (subp, w, h))
 
