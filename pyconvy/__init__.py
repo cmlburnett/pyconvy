@@ -217,7 +217,6 @@ class ConvyConfig:
 		print("Processing %s" % self.Path)
 		if self.IsMainModeSubdir:
 			for subc in self._children:
-				print(['subc', subc])
 				subc.Process()
 
 		elif self.IsMainModeMovie or self.IsMainModeTV:
