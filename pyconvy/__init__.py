@@ -457,8 +457,8 @@ class ConvyConfig:
 
 		print("Processing TV Special %s" % fpath)
 
-		if os.path.getsize(epath) == 0:
-			print("Skipping, item %s has zero file size" % epath)
+		if os.path.getsize(fpath) == 0:
+			print("Skipping, item %s has zero file size" % fpath)
 			return
 
 		w,h = VideoHelp.GetResolution(fpath)
