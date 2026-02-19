@@ -337,7 +337,8 @@ class ConvyConfig:
 		# Get dot files to skip seasons already processed
 		dots = [_ for _ in seasons if _[0] == '.']
 		seasons = [_ for _ in seasons if os.path.isdir(os.path.join(path,_))]
-		print(['seasons', seasons])
+		for season in seasons:
+			print("\tSeason: %s" % season)
 
 		for season in seasons:
 			if '.'+season in dots:
@@ -366,8 +367,16 @@ class ConvyConfig:
 		del items
 
 		episodes = VideoHelp.FilterFilesForVideos(episodes)
-		print(['episodes', episodes])
-		print(['specials', specialdirs])
+		for ep in episodes:
+			print("\t\tEp: %s" % ep)
+		for specialdir in specialdirs:
+			print("\t\tSpecial Dir: %s" % specialdir)
+			spath = os.path.join(fpath, specialdir)
+			specials = os.listdir(spath)
+			specials = VideoHelp.FilterFilesForVideos(specials)
+
+			for special in specials:
+				print("\t\t\tSpecial: %s" % special)
 
 		# Process episodes first
 		for episode in episodes:
