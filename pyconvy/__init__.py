@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 
@@ -599,7 +600,7 @@ class ConvyConfig:
 				args += ['-c:v', settings['video.codec']]
 				args += ['-b:v', settings['video.bitrate']]
 				args += ['-preset', settings['video.preset']]
-				args += ['-x265-params', 'pass=%d'%(i+1)]
+				args += ['-x265-params', 'pass=%d'%(i+1) + ":stats=%s" % os.path.join(tempfile.gettempdir(), "x265_2pass.log")]
 				args += ['-map', '0:v:0']
 				args += ['-map', '0:a:0']
 
