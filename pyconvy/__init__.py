@@ -43,7 +43,7 @@ class ItemProcessed(Exception):
 
 class Convy:
 	"""
-	Basic class that handles the processing."
+	Basic class that handles the processing.
 	"""
 
 	# All the root paths to scan and watch for addition of files
