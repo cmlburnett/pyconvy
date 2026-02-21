@@ -574,7 +574,7 @@ class ConvyConfig:
 
 		# Do a transcode once per pass
 		for i in range(0, passes):
-			args = ['ffmpeg', '-y', '-loglevel', 'warning', '-i', path]
+			args = []
 			dones = []
 
 			# Aggregate all output files into a single command
@@ -597,22 +597,8 @@ class ConvyConfig:
 					print("Adding %s of %s" % (settings['resolution'], path))
 					dones.append(done)
 
-				args += ['-c:v', settings['video.codec']]
-				args += ['-b:v', settings['video.bitrate']]
-				args += ['-preset', settings['video.preset']]
-				args += ['-x265-params', 'pass=%d'%(i+1) + ":stats=%s" % os.path.join(tempfile.gettempdir(), "x265_2pass-%s-.log" % settings['resolution'])]
-				args += ['-map', '0:v:0']
-				args += ['-map', '0:a:0']
-
-				if 'video.params' in settings:
-					args += settings['video.params'].split(' ')
-
-				args += ['-f', settings['output.format']]
-
-				if i == 0:
-					args.append(os.devnull)
-				else:
-					args.append(dest)
+				# Build command for ffmpeg (this modifies @args and returns the same object)
+				VideoHelp.BuildFfmpegCommand(args, path,dest, settings, i+1)
 
 			# All are processed
 			if len(dones) == 0:
@@ -771,4 +757,60 @@ class VideoHelp:
 			return '4k'
 		else:
 			raise ValueError("Unknown resolution of video '%s' of %d x %d" % (subp, w, h))
+
+	@staticmethod
+	def BuildFfmpegCommand(args, srcfile, destfile, settings, passCnt):
+		"""
+		Builds the command to supply ffmpeg arguments.
+		This is called once per output file with different destfile name and settings.
+		On first call, the initial ffmpeg arguments are set in the list.
+		"""
+
+		# Initial portion of command
+		if len(args) == 0:
+			args += ['ffmpeg', '-y', '-loglevel', 'warning', '-i', srcfile]
+
+		# Each output file this will called each time (different @destfile values)
+
+		# Hardware encoding
+		if settings['video.codec'] == 'hevc_nvenc':
+			args += ['-c:v', settings['video.codec']]
+			args += ['-b:v', settings['video.bitrate']]
+			args += ['-preset', settings['video.preset']]
+			args += ['-rc', 'vbr_hq']
+			args += ['-rc-lookahead', '32']
+			args += ['-multipass', 'fullres']
+			args += ['-spatial_aq', '1']
+			args += ['-temporal_aq', '1']
+			args += ['-aq-strength', '8']
+
+		# Software
+		else:
+			args += ['-c:v', settings['video.codec']]
+			args += ['-b:v', settings['video.bitrate']]
+			args += ['-preset', settings['video.preset']]
+			args += ['-x265-params', 'pass=%d'%(i+1) + ":stats=%s" % os.path.join(tempfile.gettempdir(), "x265_2pass-%s-.log" % settings['resolution'])]
+
+		# Generic, map first video and audio streams only
+		args += ['-map', '0:v:0']
+		args += ['-map', '0:a:0']
+
+		# Any additional parameters
+		if 'video.params' in settings:
+			args += settings['video.params'].split(' ')
+
+		# Finally out the output format
+		args += ['-f', settings['output.format']]
+
+		# If first pass, dump to /dev/null, otherwise to intended target file name
+		if passCnt == 1:
+			args.append(os.devnull)
+		else:
+			args.append(destfile)
+
+		# Also return but note that this object is modified in place so
+		#   args += VideoHelp.BuildFfmpegCommand(args, ....)
+		#        ^^
+		# is wrong
+		return args
 
