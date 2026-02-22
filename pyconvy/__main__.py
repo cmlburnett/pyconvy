@@ -25,6 +25,12 @@ def process(path):
 	elif args.status:
 		c.print_status()
 
+	elif args.redo:
+		c.redo()
+
+	elif args.move:
+		c.move()
+
 	else:
 		raise NotImplementedError("Unknown mode, aborting")
 

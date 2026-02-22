@@ -56,12 +56,18 @@ class Convy:
 	def getargs(self):
 		desc="""Convert audio and video to other formats.
 
-Primary purpose is to run in -d daemon mode.
+Primary purpose is to run in -d daemon mode. This will watch all directories provided and if no directories are provided then CWD is assumed.
+
+Each directory should have a convy.cfg in it that is configured for that directory. The [main].mode determines how the config file is parsed and used.
+
+Support arguments include --status to print conversion status of files in the directories, --redo to do conversion over again, and --move to move the converted files out to a different location.
 		"""
 		a = argparse.ArgumentParser(prog='pyconvy', description=desc)
-		a.add_argument('-d', '--daemon', action='store_true', default=False, help="Runs in daemon mode for the directories provided and watches for files to convert")
-		a.add_argument('-s', '--status', action='store_true', default=None, help="Shows the status of all the files in the directories provided")
-		a.add_argument('dirs', metavar="DIRS", nargs='+', action='store', default=None, help="List of directories to watch")
+		a.add_argument('-d', '--daemon', action='store_true', default=False, help="Runs in daemon mode for the directories provided and watches for files to convert.")
+		a.add_argument('-s', '--status', action='store_true', default=False, help="Shows the status of all the files in the directories provided.")
+		a.add_argument('-r', '--redo', action='store_true', default=False, help="Redo conversion of a file by deleting its dot file.")
+		a.add_argument('-m', '--move', action='store_true', default=False, help="Move converted files to a specified location with [locations] in the convy.cfg can be prepopulated with common destinations.")
+		a.add_argument('dirs', metavar="DIRS", nargs='+', action='store', default=None, help="List of directories to watch.")
 
 		args = a.parse_args()
 		return args
@@ -86,6 +92,12 @@ Primary purpose is to run in -d daemon mode.
 	def print_status(self):
 		for path,cfg in self._paths.items():
 			cfg.PrintStatus()
+
+	def redo(self):
+		raise NotImplementedError
+
+	def move(self):
+		raise NotImplementedError
 
 	def daemon_loop(self, timeout=1.0):
 		while True:
