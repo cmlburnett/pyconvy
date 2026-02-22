@@ -114,7 +114,7 @@ Primary purpose is to run in -d daemon mode.
 
 		return c
 
-	def processdirs(self, dirs):
+	def processdirs(self):
 		for path,cfg in self._paths.items():
 			try:
 				cfg.Process()
@@ -699,7 +699,7 @@ class ConvyConfig:
 				# Form dot file to signify file and resolution @done was previously converted
 				if settings['output.format'] == 'matroska':
 					dest = VideoHelp.GetFileResolutionName(path, settings['resolution'])
-					done = VideoHelp.DotFileResolutionExists(path, settings['resolution'])
+					done = VideoHelp.GetDotFileName(dest)
 				else:
 					raise ValueError("For video '%s', unknown output formst '%s'" % (path, settings['output.format']))
 
@@ -830,8 +830,10 @@ class VideoHelp:
 
 	@staticmethod
 	def GetResolution(path):
+		# Doesn't run any faster
+		#args = ['mediainfo', '--Output=JSON', '--Inform="Video;%Width%x%Height%"', path]
+
 		args = ['mediainfo', '--Output=JSON', path]
-		print(['args', args])
 		ret = subprocess.run(args, capture_output=True)
 		dat = json.loads(ret.stdout)
 		for part in dat['media']['track']:
@@ -880,6 +882,8 @@ class VideoHelp:
 		Builds the command to supply ffmpeg arguments.
 		This is called once per output file with different destfile name and settings.
 		On first call, the initial ffmpeg arguments are set in the list.
+
+		@passCnt is one-based.
 		"""
 
 		# Initial portion of command
@@ -905,7 +909,7 @@ class VideoHelp:
 			args += ['-c:v', settings['video.codec']]
 			args += ['-b:v', settings['video.bitrate']]
 			args += ['-preset', settings['video.preset']]
-			args += ['-x265-params', 'pass=%d'%(i+1) + ":stats=%s" % os.path.join(tempfile.gettempdir(), "x265_2pass-%s-.log" % settings['resolution'])]
+			args += ['-x265-params', 'pass=%d'%passCnt + ":stats=%s" % os.path.join(tempfile.gettempdir(), "x265_2pass-%s-.log" % settings['resolution'])]
 
 		# Generic, map first video and audio streams only
 		args += ['-map', '0:v:0']
@@ -952,14 +956,14 @@ class VideoHelp:
 		Get the file name for resolution @res (eg, 'sd', 'hd', '1k', '4k') for file @fname.
 		"""
 		s = os.path.splitext(fname)
-		return os.path.join(s[0], ' ' + res + s[1])
+		return s[0] + ' ' + res + s[1]
 
 	@staticmethod
 	def DotFileResolutionExists(fname, res):
 		"""
 		Checks if the corresponding dot file for file @fname for resolution @res is present or not.
 		"""
-		return __class__.GetDotFileName( __class__.GetFileResolutionName(fname, res) )
+		return os.path.exists( __class__.GetDotFileName( __class__.GetFileResolutionName(fname, res) ))
 
 	@staticmethod
 	def GetExistingResolutions(fname):

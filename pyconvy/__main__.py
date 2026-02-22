@@ -20,8 +20,7 @@ def process(path):
 		c.addpath(_)
 
 	if args.daemon:
-		#c.daemon_loop()
-		pass
+		c.daemon_loop()
 
 	elif args.status:
 		c.print_status()
