@@ -2,12 +2,32 @@
 from pyconvy import Convy
 
 # System
+import os
 import sys
 
 def process(path):
 	c = Convy()
-	c.addpath(path)
-	c.loop()
+	args = c.getargs()
+	print(args)
+
+	# Assume CWD if none is set
+	if len(args.dirs) == 0:
+		args.daemon.append('.')
+
+	for _ in args.dirs:
+		_ = os.path.abspath(_)
+		print("Adding directory to watch: %s" % _)
+		c.addpath(_)
+
+	if args.daemon:
+		#c.daemon_loop()
+		pass
+
+	elif args.status:
+		c.print_status()
+
+	else:
+		raise NotImplementedError("Unknown mode, aborting")
 
 if __name__ == '__main__':
 	if len(sys.argv) == 1:

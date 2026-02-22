@@ -3,6 +3,7 @@ pyconvy -- python library for converting video and audio files into other format
 """
 
 # System
+import argparse
 import configparser
 import datetime
 import json
@@ -50,32 +51,46 @@ class Convy:
 	_paths = None
 
 	def __init__(self):
-		self._paths = []
+		self._paths = {}
+
+	def getargs(self):
+		desc="""Convert audio and video to other formats.
+
+Primary purpose is to run in -d daemon mode.
+		"""
+		a = argparse.ArgumentParser(prog='pyconvy', description=desc)
+		a.add_argument('-d', '--daemon', action='store_true', default=False, help="Runs in daemon mode for the directories provided and watches for files to convert")
+		a.add_argument('-s', '--status', action='store_true', default=None, help="Shows the status of all the files in the directories provided")
+		a.add_argument('dirs', metavar="DIRS", nargs='+', action='store', default=None, help="List of directories to watch")
+
+		args = a.parse_args()
+		return args
 
 	def addpath(self, path):
 		path = os.path.abspath(path)
-		self._paths.append(path)
+		if not os.path.isdir(path):
+			raise Exception("Added path '%s' that is not a directory" % path)
 
-	def loop(self, timeout=1.0):
+		# Added it twice
+		if path in self._paths:
+			return
+
+		# Check root directory here
+		ret = self._scansubdir(path, None)
+		if ret is None:
+			raise Exception("Added path '%s' that is not valid" % path)
+
+		# Map path to the config object
+		self._paths[path] = ret
+
+	def print_status(self):
+		for path,cfg in self._paths.items():
+			cfg.PrintStatus()
+
+	def daemon_loop(self, timeout=1.0):
 		while True:
-			dirs = self.scandirs()
-			self.processdirs(dirs)
+			self.processdirs()
 			time.sleep(timeout)
-
-	def scandirs(self):
-		validdirs = []
-
-		for p in self._paths:
-			if not os.path.isdir(p):
-				raise Exception("Added path '%s' that is not a directory" % p)
-
-			# Check root directory here
-			ret = self._scansubdir(p, None)
-			if ret is None:
-				raise Exception("Added path '%s' that is not valid" % p)
-			validdirs.append(ret)
-
-		return validdirs
 
 	def _scansubdir(self, root, parent):
 		"""
@@ -100,9 +115,9 @@ class Convy:
 		return c
 
 	def processdirs(self, dirs):
-		for c in dirs:
+		for path,cfg in self._paths.items():
 			try:
-				c.Process()
+				cfg.Process()
 			except ItemProcessed:
 				return
 			except:
@@ -210,6 +225,104 @@ class ConvyConfig:
 
 				pass
 
+	def PrintStatus(self, indent=0):
+		tabs = '\t' * indent
+		print(tabs + "Status: %s" % self.Path)
+
+		tabs1 = '\t' * (indent+1)
+		tabs2 = '\t' * (indent+2)
+		tabs3 = '\t' * (indent+3)
+		tabs4 = '\t' * (indent+4)
+		tabs5 = '\t' * (indent+5)
+		tabs6 = '\t' * (indent+6)
+
+		if self.IsMainModeSubdir:
+			for subc in self._children:
+				subc.PrintStatus(indent+1)
+
+		elif self.IsMainModeMovie:
+			for item in self._items:
+				print(tabs1 + "Movie: %s" % item[2])
+
+				done = VideoHelp.DotFileExists(item[2])
+				if done:
+					print(tabs2 + "Done")
+				else:
+					print(tabs2 + "Incomplete")
+				print()
+
+				subitems = os.listdir(item[2])
+				subitems = VideoHelp.FilterFilesForVideos(subitems)
+
+				for subi in subitems:
+					if done:
+						ress = VideoHelp.GetExistingResolutions( os.path.join(item[2], subi) )
+						print(tabs2 + "%s (%s)" % (subi, ','.join(ress)))
+					else:
+						ress = VideoHelp.GetExistingResolutions( os.path.join(item[2], subi) )
+						if len(ress):
+							print(tabs2 + "%s (%s)" % (subi, ','.join(ress)))
+						else:
+							print(tabs2 + subi)
+
+				print()
+
+		elif self.IsMainModeTV:
+			for item in self._items:
+				print(tabs1 + "TV: %s" % item[2])
+
+				done = VideoHelp.DotFileExists(item[2])
+				if done:
+					print(tabs2 + "Done")
+				else:
+					print(tabs2 + "Incomplete")
+				print()
+
+				seasons = os.listdir(item[2])
+				dots = [_ for _ in seasons if _[0] == '.']
+				seasons = [_ for _ in seasons if os.path.isdir(os.path.join(item[2],_))]
+				for season in seasons:
+					print(tabs2 + "Season: %s" % season)
+					fpath = os.path.join(item[2], season)
+					done = VideoHelp.DotFileExists(fpath)
+					if done:
+						print(tabs3 + "Done")
+					else:
+						print(tabs3 + "Incomplete")
+					print()
+
+					items = os.listdir(fpath)
+					specialdirs = [_ for _ in items if os.path.isdir(os.path.join(fpath,_))]
+					episodes = [_ for _ in items if os.path.isfile(os.path.join(fpath,_))]
+					episodes = VideoHelp.FilterFilesForVideos(episodes)
+
+					for specialdir in specialdirs:
+						print(tabs3 + "Special: %s" % specialdir)
+
+						spath = os.path.join(fpath, specialdir)
+						specials = os.listdir(spath)
+						specials = VideoHelp.FilterFilesForVideos(specials)
+
+						for special in specials:
+							print(tabs4 + "Special: %s" % special)
+						print()
+					print()
+
+					print(tabs3 + "Episodes:")
+					for episode in episodes:
+						epath = os.path.join(fpath, episode)
+						ress = VideoHelp.GetExistingResolutions(epath)
+						if len(ress):
+							print(tabs4 + "Episode: %s (%s)" % (episode,",".join(ress)))
+						else:
+							print(tabs4 + "Episode: %s" % episode)
+					print()
+
+			print()
+
+		else:
+			raise NotImplementedError("Unknown config type for %s" % self.Path)
+
 	def Process(self):
 		"""
 		Process the directory based on the configuration file present.
@@ -241,6 +354,9 @@ class ConvyConfig:
 				with open(done, 'w') as f:
 					f.write("Completed item %s\n\n" % item[2])
 					f.write("End: %s\n" % end_str)
+
+		else:
+			raise NotImplementedError("Unknown config type for %s" % self.Path)
 
 	def ProcessMovie(self, path):
 		"""
@@ -582,8 +698,8 @@ class ConvyConfig:
 				# Form output file location @dest
 				# Form dot file to signify file and resolution @done was previously converted
 				if settings['output.format'] == 'matroska':
-					dest = os.path.splitext(path)[0] + (' %s.mkv' % settings['resolution'])
-					done = os.path.split(dest)[0] + '/.' + os.path.split(dest)[1]
+					dest = VideoHelp.GetFileResolutionName(path, settings['resolution'])
+					done = VideoHelp.DotFileResolutionExists(path, settings['resolution'])
 				else:
 					raise ValueError("For video '%s', unknown output formst '%s'" % (path, settings['output.format']))
 
@@ -813,4 +929,55 @@ class VideoHelp:
 		#        ^^
 		# is wrong
 		return args
+
+	@staticmethod
+	def GetDotFileName(fname):
+		"""
+		Get the path of the dot file name for @fname to indicate it is completed.
+		"""
+
+		s = os.path.split(fname)
+		return os.path.join(s[0], '.' + s[1])
+
+	@staticmethod
+	def DotFileExists(fname):
+		"""
+		Checks if the corresponding dot file for @fname is present or not.
+		"""
+		return os.path.exists( __class__.GetDotFileName(fname) )
+
+	@staticmethod
+	def GetFileResolutionName(fname, res):
+		"""
+		Get the file name for resolution @res (eg, 'sd', 'hd', '1k', '4k') for file @fname.
+		"""
+		s = os.path.splitext(fname)
+		return os.path.join(s[0], ' ' + res + s[1])
+
+	@staticmethod
+	def DotFileResolutionExists(fname, res):
+		"""
+		Checks if the corresponding dot file for file @fname for resolution @res is present or not.
+		"""
+		return __class__.GetDotFileName( __class__.GetFileResolutionName(fname, res) )
+
+	@staticmethod
+	def GetExistingResolutions(fname):
+		# Split into directory and file name
+		d,f = os.path.split(fname)
+		# Split off extension
+		base,ext = os.path.splitext(f)
+
+		# fname = /foo/bar/monkey.txt
+		#   d == /food/bar
+		#   f == monkey.txt
+		#   base == monkey
+		#   ext == .txt
+
+		# Collect all resolutions found (eg, 'sd', 'hd', '1k', '4k')
+		ret = []
+		for item in os.listdir(d):
+			if item.startswith(base) and item != f:
+				ret.append(item[len(base)+1:-len(ext)])
+		return ret
 
