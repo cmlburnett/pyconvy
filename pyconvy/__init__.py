@@ -923,6 +923,10 @@ class VideoHelp:
 			args += ['-preset', settings['video.preset']]
 			args += ['-x265-params', 'pass=%d'%passCnt + ":stats=%s" % os.path.join(tempfile.gettempdir(), "x265_2pass-%s-.log" % settings['resolution'])]
 
+		# Same for hardware & software
+		if 'video.aspect' in settings:
+			args += ['-vf', 'scale=%s' % settings['video.aspect']]
+
 		# Generic, map first video and audio streams only
 		args += ['-map', '0:v:0']
 		args += ['-map', '0:a:0']
