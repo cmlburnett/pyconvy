@@ -889,6 +889,20 @@ class VideoHelp:
 			raise ValueError("Unknown resolution of video '%s' of %d x %d" % (subp, w, h))
 
 	@staticmethod
+	def CropDetect(srcfile, duration='2:00'):
+		args = ['ffmpeg', '-i', srcfile, '-to', duration, '-vf', 'cropdetect', '-f', 'null', '-']
+		try:
+			# Execute ffmpeg
+			out = subprocess.run(args, capture_output=True)
+			lines = out.stderr.decode('utf-8').split('\n')
+			line = lines[-10]
+			c = line.split('crop')[-1][1:]
+			return c
+		except:
+			traceback.print_exc()
+			return None
+
+	@staticmethod
 	def BuildFfmpegCommand(args, srcfile, destfile, settings, passCnt):
 		"""
 		Builds the command to supply ffmpeg arguments.
@@ -923,7 +937,18 @@ class VideoHelp:
 			args += ['-preset', settings['video.preset']]
 			args += ['-x265-params', 'pass=%d'%passCnt + ":stats=%s" % os.path.join(tempfile.gettempdir(), "x265_2pass-%s-.log" % settings['resolution'])]
 
+		# If autocrop set, then determine an autocrop zone based on the provided time
+		if 'video.autocrop' in settings:
+			crop = __class__.CropDetect(srcfile, settings['video.autocrop'])
+
+			# If it errors, then don't crop
+			if crop is None:
+				print("Unable to autocrop")
+			else:
+				args += ['-vf', 'crop=%s' % crop]
+
 		# Same for hardware & software
+		# scale after cropping
 		if 'video.aspect' in settings:
 			args += ['-vf', 'scale=%s' % settings['video.aspect']]
 
