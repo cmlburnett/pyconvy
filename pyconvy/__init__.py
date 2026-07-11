@@ -8,11 +8,14 @@ import configparser
 import datetime
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import tempfile
 import time
 import traceback
+
+CONVY_CONFIG = "convy.cfg"
 
 # Try to get pushover library otherwise don't use it
 try:
@@ -110,7 +113,7 @@ Support arguments include --status to print conversion status of files in the di
 		"""
 
 		# Read in config
-		cfgpath = os.path.join(root, 'convy.cfg')
+		cfgpath = os.path.join(root, CONVY_CONFIG)
 		if not os.path.exists(cfgpath):
 			return None
 
