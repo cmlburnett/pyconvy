@@ -890,14 +890,22 @@ class VideoHelp:
 
 	@staticmethod
 	def CropDetect(srcfile, duration='2:00'):
-		args = ['ffmpeg', '-i', srcfile, '-to', duration, '-vf', 'cropdetect', '-f', 'null', '-']
+		args = ['ffmpeg', '-i', srcfile, '-to', duration, '-vf', 'cropdetect']
+		args += ['-analyzeduration', '100M']
+		args += ['-probesize', '50M']
+		args += ['-f', 'null', '-']
 		try:
 			# Execute ffmpeg
 			out = subprocess.run(args, capture_output=True)
 			lines = out.stderr.decode('utf-8').split('\n')
-			line = lines[-10]
-			c = line.split('crop')[-1][1:]
-			return c
+			lines.reverse()
+			for line in lines:
+				if 'crop=' in line:
+					c = line.split('crop')[-1][1:]
+					return c
+
+			# Didn't find a line
+			return None
 		except:
 			traceback.print_exc()
 			return None
@@ -959,6 +967,10 @@ class VideoHelp:
 		# Any additional parameters
 		if 'video.params' in settings:
 			args += settings['video.params'].split(' ')
+
+		if True:
+			args += ['-analyzeduration', '100M']
+			args += ['-probesize', '50M']
 
 		# Finally out the output format
 		args += ['-f', settings['output.format']]
