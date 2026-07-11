@@ -147,7 +147,7 @@ class ConvyConfig:
 	VALID_MODES = ['subdir', 'movie', 'tv', 'soundtrack']
 	VALID_RESOLUTIONS = ['sd', 'br', '4k']
 
-	def __init__(self, path, parent):
+	def __init__(self, path, parent=None):
 		print('Config for path %s' % path)
 		self._path = path
 		self._dirpath, self._filename = os.path.split(self._path)
