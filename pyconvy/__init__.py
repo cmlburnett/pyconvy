@@ -956,11 +956,13 @@ class VideoHelp:
 			if crop is None:
 				print("Unable to autocrop")
 			else:
-				args += ['-vf', 'crop=%s' % crop]
+				if 'video.aspect' in settings:
+					args += ['-vf', 'crop=%s,scale=%s' % (crop,settings['video.aspect'])]
+				else:
+					args += ['-vf', 'crop=%s' % crop]
 
-		# Same for hardware & software
-		# scale after cropping
-		if 'video.aspect' in settings:
+		# Same for hardware & software for scaling
+		elif 'video.aspect' in settings:
 			args += ['-vf', 'scale=%s' % settings['video.aspect']]
 
 		# Generic, map first video and audio streams only
