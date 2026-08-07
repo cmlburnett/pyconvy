@@ -882,14 +882,14 @@ class VideoHelp:
 	def GuessResolution(w,h):
 		if (w,h) == (720,480):
 			return 'sd'
-		elif (w,h) == (1080,720):
+		elif (w,h) == (1280,720) or (w,h) == (1080,720):
 			return 'hd'
 		elif (w,h) == (1920,1080):
 			return '1k'
 		elif (w,h) == (4096,2160) or (w,h) == (3840,2160):
 			return '4k'
 		else:
-			raise ValueError("Unknown resolution of video '%s' of %d x %d" % (subp, w, h))
+			raise ValueError("Unknown resolution of video of %d x %d" % (w, h))
 
 	@staticmethod
 	def CropDetect(srcfile, duration='2:00'):
