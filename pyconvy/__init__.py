@@ -914,6 +914,18 @@ class VideoHelp:
 			return None
 
 	@staticmethod
+	def HasAudio(srcfile):
+		args = ['ffprobe', srcfile]
+		try:
+			out = subprocess.run(args, capture_output=True)
+			lines = out.stderr.decode('utf-8').spllit('\n')
+			lines = [_ for _ in lines if 'Stream #0' in _ and if 'Audio' in _]
+			# True if there's at least one audio track (a photos collection won't have audio)
+			return len(lines) > 0
+		except:
+			return None
+
+	@staticmethod
 	def BuildFfmpegCommand(args, srcfile, destfile, settings, passCnt):
 		"""
 		Builds the command to supply ffmpeg arguments.
@@ -922,6 +934,9 @@ class VideoHelp:
 
 		@passCnt is one-based.
 		"""
+
+		# Check if audio is present, and skip the audio stuff if not present
+		hasaudio = __class__.HasAudio(srcfile)
 
 		# Initial portion of command
 		if len(args) == 0:
@@ -965,9 +980,22 @@ class VideoHelp:
 		elif 'video.aspect' in settings:
 			args += ['-vf', 'scale=%s' % settings['video.aspect']]
 
-		# Generic, map first video and audio streams only
-		args += ['-map', '0:v:0']
-		args += ['-map', '0:a:0']
+		# Do maps as directed for video stream if provided, otherwise assume just the first video stream
+		if 'video.map' in settings:
+			maps = settings['video.map'].aplist(' ')
+			for m in maps:
+				args += ['-map', m]
+		else:
+			args += ['-map', '0:v:0']
+
+		# Do maps as directed for audio stream if provided, otherwise assume just the first audio stream
+		if hasaudio:
+			if 'audio.map' in settings:
+				maps = settings['audio.map'].aplist(' ')
+				for m in maps:
+					args += ['-map', m]
+			else:
+				args += ['-map', '0:a:0']
 
 		# Any additional parameters
 		if 'video.params' in settings:
