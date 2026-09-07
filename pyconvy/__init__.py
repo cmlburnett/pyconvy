@@ -918,11 +918,13 @@ class VideoHelp:
 		args = ['ffprobe', srcfile]
 		try:
 			out = subprocess.run(args, capture_output=True)
-			lines = out.stderr.decode('utf-8').spllit('\n')
-			lines = [_ for _ in lines if 'Stream #0' in _ and if 'Audio' in _]
+			lines = out.stderr.decode('utf-8').split('\n')
+			lines = [_ for _ in lines if 'Stream #' in _ and 'Audio' in _]
+			print(['Audio streams', lines])
 			# True if there's at least one audio track (a photos collection won't have audio)
 			return len(lines) > 0
-		except:
+		except Exception as e:
+			print(e)
 			return None
 
 	@staticmethod
