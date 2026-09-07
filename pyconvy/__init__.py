@@ -9,6 +9,7 @@ import datetime
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -914,18 +915,49 @@ class VideoHelp:
 			return None
 
 	@staticmethod
-	def HasAudio(srcfile):
+	def HasAudio(srcfile, language='eng'):
+		z = re.compile('Stream #(\d+):(\d+)\((\w+)\): (\w+):')
+
+		vcnt,acnt,scnt = 0,0,0
+		v,a,s = [],[],[]
+
 		args = ['ffprobe', srcfile]
 		try:
 			out = subprocess.run(args, capture_output=True)
 			lines = out.stderr.decode('utf-8').split('\n')
-			lines = [_ for _ in lines if 'Stream #' in _ and 'Audio' in _]
-			print(['Audio streams', lines])
-			# True if there's at least one audio track (a photos collection won't have audio)
-			return len(lines) > 0
+			lines = list(map(z.search, lines))
+			lines = [_ for _ in lines if _ is not None]
+
+			for m in lines:
+				if m is None: continue
+				if m.group(4) == 'Video':
+					g = (vcnt, m.group(3))
+					v.append(g)
+					vcnt += 1
+				elif m.group(4) == 'Audio':
+					g = (acnt, m.group(3))
+					a.append(g)
+					acnt += 1
+				elif m.group(4) == 'Subtitle':
+					g = (scnt, m.group(3))
+					s.append(g)
+					scnt += 1
+				else:
+					raise ValueError("Unrecognized stream type: %s" % str(g))
 		except Exception as e:
 			print(e)
 			return None
+
+		# No audio streams
+		if acnt == 0: return None
+
+		# Pick the first english one
+		for stream in a:
+			if stream[1] == language:
+				return stream[0]
+		else:
+			# No english streams, just go with the first one then
+			return 0
 
 	@staticmethod
 	def BuildFfmpegCommand(args, srcfile, destfile, settings, passCnt):
@@ -938,6 +970,7 @@ class VideoHelp:
 		"""
 
 		# Check if audio is present, and skip the audio stuff if not present
+		# TODO: second argument is the target language, ideal to make this configurable
 		hasaudio = __class__.HasAudio(srcfile)
 
 		# Initial portion of command
@@ -991,13 +1024,14 @@ class VideoHelp:
 			args += ['-map', '0:v:0']
 
 		# Do maps as directed for audio stream if provided, otherwise assume just the first audio stream
-		if hasaudio:
+		if hasaudio is not None:
 			if 'audio.map' in settings:
 				maps = settings['audio.map'].aplist(' ')
 				for m in maps:
 					args += ['-map', m]
 			else:
-				args += ['-map', '0:a:0']
+				# @hasaudio is the stream number of first english language
+				args += ['-map', '0:a:%s' % hasaudio]
 
 		# Any additional parameters
 		if 'video.params' in settings:
